@@ -11,7 +11,7 @@ import { deleteComplaintFromStore } from '@/lib/dataStore';
 import type { ComplaintStatus } from '@/types';
 import { STATUS_META } from '@/lib/constants';
 
-const statusFilters: (ComplaintStatus | 'all')[] = ['all', 'submitted', 'assigned', 'in_progress', 'resolved'];
+const statusFilters: (ComplaintStatus | 'all')[] = ['all', 'Pending', 'Assigned', 'In Progress', 'Completed'];
 
 export function ComplaintHistoryPage() {
   const { profile } = useAuth();
@@ -34,7 +34,9 @@ export function ComplaintHistoryPage() {
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: complaints.length };
     for (const s of statusFilters) {
-      if (s !== 'all') counts[s] = complaints.filter((c) => c.status === s).length;
+      if (s !== 'all') {
+        counts[s] = complaints.filter((c) => (c.status || '').toLowerCase().trim() === s.toLowerCase().trim()).length;
+      }
     }
     return counts;
   }, [complaints]);

@@ -9,7 +9,7 @@ import { EmptyState, LoadingSpinner } from '@/components/ui';
 import type { ComplaintStatus } from '@/types';
 import { STATUS_META } from '@/lib/constants';
 
-const statusFilters: (ComplaintStatus | 'all')[] = ['all', 'assigned', 'in_progress', 'resolved'];
+const statusFilters: (ComplaintStatus | 'all')[] = ['all', 'Assigned', 'In Progress', 'Completed'];
 
 export function AssignedComplaintsPage() {
   const { profile } = useAuth();
@@ -26,7 +26,9 @@ export function AssignedComplaintsPage() {
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: complaints.length };
     for (const s of statusFilters) {
-      if (s !== 'all') counts[s] = complaints.filter((c) => c.status === s).length;
+      if (s !== 'all') {
+        counts[s] = complaints.filter((c) => (c.status || '').toLowerCase().trim() === s.toLowerCase().trim()).length;
+      }
     }
     return counts;
   }, [complaints]);

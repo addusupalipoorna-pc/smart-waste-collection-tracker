@@ -70,12 +70,15 @@ export function ComplaintDetailPage() {
     fetchComplaint();
   }, [id]);
 
-  // Admin: fetch available collectors
+  // Fetch available sanitation workers for assignment
   useEffect(() => {
-    if (profile?.role === 'admin') {
-      fetchCollectors().then((cols) => setCollectors(cols));
-    }
-  }, [profile?.role]);
+    fetchCollectors().then((cols) => {
+      setCollectors(cols);
+      if (cols.length > 0) {
+        setSelectedCollector((prev) => prev || cols[0].id);
+      }
+    });
+  }, []);
 
   const wasteType = complaint ? WASTE_TYPES.find((w) => w.value === complaint.waste_type) : null;
 
@@ -490,7 +493,7 @@ export function ComplaintDetailPage() {
           </div>
 
           {/* Admin Assignment Controls */}
-          {isAdmin && (complaint.status === 'Pending' || complaint.status === 'Assigned') && (
+          {isAdmin && complaint.status !== 'Completed' && complaint.status !== 'Rejected' && (
             <div className="card p-5 space-y-3 border-emerald-200">
               <h3 className="font-bold text-sm text-slate-900">Assign Sanitation Worker</h3>
               <select

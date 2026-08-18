@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ClipboardList, Clock, CheckCircle2, AlertCircle, FileText,
   FileSpreadsheet, Users, Map as MapIcon, TrendingUp, Award, ArrowRight,
-  Trash2, Navigation, Truck, Sparkles
+  Trash2, Navigation, Truck, Sparkles, UserCheck, X
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,11 +20,21 @@ import { getComplaintStats, getCleanlinessScore } from '@/lib/utils';
 import { WASTE_TYPES } from '@/lib/constants';
 import { exportComplaintsPDF, exportComplaintsExcel } from '@/lib/export';
 import { format, subDays, isSameDay } from 'date-fns';
-import { getLocalBins } from '@/lib/dataStore';
+import { getLocalBins, updateComplaintInStore } from '@/lib/dataStore';
+import type { Profile } from '@/types';
 
 export function AdminDashboard() {
   const { profile } = useAuth();
-  const { complaints, loading } = useComplaints({
+  const [assignModalComplaint, setAssignModalComplaint] = useState<any | null>(null);
+  const [selectedCollector, setSelectedCollector] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  const collectors: Profile[] = [
+    { id: 'demo_collector_id', full_name: 'Rajesh Kumar (Collector)', role: 'collector', phone: '+91 91234 56789', zone: 'Central Zone', avatar_url: null, created_at: '' },
+    { id: 'collector_2', full_name: 'Suresh Patel (Collector)', role: 'collector', phone: '+91 98111 22233', zone: 'North Zone', avatar_url: null, created_at: '' },
+    { id: 'collector_3', full_name: 'Vikram Singh (Collector)', role: 'collector', phone: '+91 97444 55566', zone: 'South Zone', avatar_url: null, created_at: '' },
+  ];
+
+  const { complaints, loading, refetch } = useComplaints({
     query: 'all',
     userId: profile?.id || 'demo_admin_id',
     limit: 100,
@@ -56,17 +67,28 @@ export function AdminDashboard() {
     };
   });
 
-  // Status distribution
-  const statusData = [
-    { name: 'Pending', value: stats.pending, color: '#d97706' },
-    { name: 'Assigned', value: stats.assigned, color: '#2563eb' },
-    { name: 'In Progress', value: stats.inProgress, color: '#0f766e' },
-    { name: 'Resolved', value: stats.completed, color: '#166534' },
-    { name: 'Rejected', value: stats.rejected, color: '#dc2626' },
-  ].filter((d) => d.value > 0);
-
   const geoComplaints = complaints.filter((c) => c.latitude != null && c.longitude != null);
   const recentComplaints = complaints.slice(0, 6);
+
+  const handleQuickAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignModalComplaint || !selectedCollector) return;
+    setAssigning(true);
+    try {
+      await updateComplaintInStore(assignModalComplaint.id, {
+        assigned_collector_id: selectedCollector,
+        status: 'Assigned',
+        admin_notes: 'Assigned by administrator via quick dashboard queue.',
+      });
+      setAssignModalComplaint(null);
+      setSelectedCollector('');
+      refetch();
+    } catch {
+      // ignore
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -93,84 +115,91 @@ export function AdminDashboard() {
         }
       />
 
-      {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link to="/bins" className="card p-3.5 hover:border-emerald-300 transition-all bg-white flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard
+          label="Total Reports"
+          value={stats.total}
+          icon={<ClipboardList className="h-5 w-5" />}
+          color="#166534"
+          subtitle="All village wards"
+        />
+        <StatCard
+          label="Pending Assignment"
+          value={stats.pending}
+          icon={<Clock className="h-5 w-5" />}
+          color="#d97706"
+          subtitle="Requires dispatch"
+        />
+        <StatCard
+          label="Active Collection"
+          value={stats.assigned + stats.inProgress}
+          icon={<Truck className="h-5 w-5" />}
+          color="#0f766e"
+          subtitle="En route / In progress"
+        />
+        <StatCard
+          label="Resolved Issues"
+          value={stats.completed}
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          color="#166534"
+          subtitle="Photo-verified clean"
+        />
+      </div>
+
+      {/* IoT & Operations Secondary Bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <Link to="/bins" className="card p-4 hover:border-emerald-300 transition-all flex items-center justify-between group">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">IoT Smart Bins</p>
+            <p className="font-bold text-lg text-slate-900 mt-0.5">{bins.length} Active Nodes</p>
+            <p className="text-[11px] text-red-600 font-semibold">{fullBins} Over 80% Full</p>
+          </div>
+          <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <Trash2 className="h-4 w-4" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-900">Smart Bins</p>
-            <p className="text-[10px] text-slate-500">{fullBins} Require Attention</p>
-          </div>
         </Link>
 
-        <Link to="/routes" className="card p-3.5 hover:border-cyan-300 transition-all bg-white flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-100 text-cyan-800">
+        <Link to="/routes" className="card p-4 hover:border-emerald-300 transition-all flex items-center justify-between group">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Route AI</p>
+            <p className="font-bold text-lg text-slate-900 mt-0.5">36% Fuel Saved</p>
+            <p className="text-[11px] text-emerald-700 font-semibold">TSP Optimization</p>
+          </div>
+          <div className="h-9 w-9 rounded-xl bg-teal-50 text-teal-800 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <Navigation className="h-4 w-4" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-900">Route Engine</p>
-            <p className="text-[10px] text-slate-500">AI TSP Optimizer</p>
-          </div>
         </Link>
 
-        <Link to="/vehicles" className="card p-3.5 hover:border-purple-300 transition-all bg-white flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-800">
+        <Link to="/vehicles" className="card p-4 hover:border-emerald-300 transition-all flex items-center justify-between group">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fleet Vehicles</p>
+            <p className="font-bold text-lg text-slate-900 mt-0.5">5 Trucks Active</p>
+            <p className="text-[11px] text-blue-700 font-semibold">Live GPS Status</p>
+          </div>
+          <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-800 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
             <Truck className="h-4 w-4" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-900">Fleet Vehicles</p>
-            <p className="text-[10px] text-slate-500">5 Active Trucks</p>
-          </div>
         </Link>
 
-        <Link to="/reports" className="card p-3.5 hover:border-amber-300 transition-all bg-white flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
-            <FileText className="h-4 w-4" />
+        <div className="card p-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Cleanliness Score</p>
+            <p className="font-bold text-2xl text-emerald-950 mt-0.5">{score}<span className="text-sm text-slate-400 font-normal">/100</span></p>
+            <p className="text-[11px] text-emerald-700 font-semibold">Village Index</p>
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-900">Reports Center</p>
-            <p className="text-[10px] text-slate-500">Daily/Weekly Audits</p>
-          </div>
-        </Link>
-      </div>
-
-      {/* KPI Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard label="Total Complaints" value={stats.total} icon={<ClipboardList className="h-5 w-5" />} color="#166534" />
-        <StatCard label="Pending Review" value={stats.pending} icon={<Clock className="h-5 w-5" />} color="#d97706" />
-        <StatCard label="Assigned / Active" value={stats.assigned + stats.inProgress} icon={<AlertCircle className="h-5 w-5" />} color="#2563eb" />
-        <StatCard label="Resolved Issues" value={stats.completed} icon={<CheckCircle2 className="h-5 w-5" />} color="#15803d" />
-      </div>
-
-      {/* Village Cleanliness Score Banner */}
-      <div className="card p-5 bg-gradient-to-r from-emerald-800 to-teal-800 text-white shadow-2xs border-emerald-900">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur-xs">
-              <Award className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-emerald-200 uppercase tracking-wider">Village Cleanliness Performance Index</p>
-              <p className="text-3xl font-bold tracking-tight">{score}<span className="text-lg font-normal text-emerald-200">/100</span></p>
-            </div>
-          </div>
-          <div className="text-right">
-            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/20 text-white backdrop-blur-xs inline-block mb-1">
-              {score >= 80 ? 'Excellent Status' : score >= 60 ? 'Good' : 'Needs Action'}
-            </span>
-            <p className="text-xs text-emerald-200">{stats.completed} of {stats.total} complaints resolved</p>
+          <div className="h-9 w-9 rounded-xl bg-emerald-800 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <Award className="h-4 w-4" />
           </div>
         </div>
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      {/* Analytics Charts Grid */}
+      <div className="grid lg:grid-cols-3 gap-6">
         {/* Trend Area Chart */}
-        <div className="card p-5 space-y-3">
+        <div className="card p-5 lg:col-span-2 space-y-3">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <TrendingUp className="h-4 w-4 text-emerald-700" /> Weekly Activity Trends
+            <TrendingUp className="h-4 w-4 text-emerald-700" /> Weekly Collection vs Resolution Trend
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={trendData}>
@@ -260,13 +289,70 @@ export function AdminDashboard() {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: i * 0.02 }}
+                className="space-y-2"
               >
                 <ComplaintCard complaint={c} to={`/complaints/${c.id}`} showCitizen showCollector />
+                {(c.status === 'Pending' || !c.assigned_collector_id) && (
+                  <button
+                    onClick={() => setAssignModalComplaint(c)}
+                    className="w-full btn-primary text-xs py-2 flex items-center justify-center gap-1.5 shadow-2xs"
+                  >
+                    <UserCheck className="h-3.5 w-3.5" /> Assign Sanitation Worker
+                  </button>
+                )}
               </motion.div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Quick Assign Modal */}
+      {assignModalComplaint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="card p-6 max-w-md w-full space-y-4 shadow-xl border-emerald-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-slate-900">Assign Worker to Complaint</h3>
+              <button onClick={() => setAssignModalComplaint(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <p className="font-bold text-slate-900">{assignModalComplaint.complaint_code} ({assignModalComplaint.waste_type} Waste)</p>
+              <p className="text-slate-500 truncate">{assignModalComplaint.address}</p>
+              <p className="text-slate-600 line-clamp-2 mt-1">{assignModalComplaint.description}</p>
+            </div>
+
+            <form onSubmit={handleQuickAssignSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="label">Select Field Worker</label>
+                <select
+                  required
+                  className="input text-xs"
+                  value={selectedCollector}
+                  onChange={(e) => setSelectedCollector(e.target.value)}
+                >
+                  <option value="">Choose a worker...</option>
+                  {collectors.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.full_name} ({col.zone || 'Central Zone'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setAssignModalComplaint(null)} className="btn-secondary text-xs px-3.5 py-2">
+                  Cancel
+                </button>
+                <button type="submit" disabled={!selectedCollector || assigning} className="btn-primary text-xs px-4 py-2 flex items-center gap-1">
+                  {assigning ? 'Assigning...' : 'Confirm Assignment'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
